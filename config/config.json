@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "ftl-app-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/ftlApp/FTLAppWebPart.js",
+          "manifest": "./src/webparts/ftlApp/FTLAppWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "FTLAppWebPartStrings": "lib/webparts/ftlApp/loc/{locale}.js"
+  }
+}

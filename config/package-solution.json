@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "sp-fx-ftl-app-client-side-solution",
+    "id": "8f578aa8-6e0a-4d32-b3d6-c205265c565c",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.23.2"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "FTLApp"
+      },
+      "longDescription": {
+        "default": "FTLApp"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "FTLApp Feature",
+        "description": "The feature that activates elements of the FTLApp solution.",
+        "id": "c0012f04-2084-4321-8d0c-60ce5e2102dd",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/sp-fx-ftl-app.sppkg"
+  }
+}

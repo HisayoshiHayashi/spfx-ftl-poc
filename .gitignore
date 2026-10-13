@@ -1,0 +1,32 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules
+
+# Build output
+dist
+lib
+lib-dts
+lib-commonjs
+lib-esm
+jest-output
+release
+solution
+temp
+*.sppkg
+.heft
+coverage
+
+# macOS and IDE
+.DS_Store
+.ntvs_analysis.dat
+.vs
+bin
+obj
+
+# Generated source
+*.resx.ts
+*.scss.ts

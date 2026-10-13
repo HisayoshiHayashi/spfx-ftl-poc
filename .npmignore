@@ -1,0 +1,15 @@
+# Ignore everything by default
+**
+
+# Include files needed for publishing
+!/bin/**
+!/dist/**
+!/EULA/**
+!/lib/**
+!ThirdPartyNotice.txt
+
+# Exclude source maps and tests
+/dist/*.stats.*
+/dist/**/*.js.map
+/lib/**/*.js.map
+/lib/**/test/**

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "5c3a5981-fabc-44b0-ac7b-2d5d349baf86",
+  "alias": "FTLAppWebPart",
+  "componentType": "WebPart",
+  "version": "*",
+  "manifestVersion": 2,
+  "requiresCustomScript": false,
+  "supportedHosts": ["SharePointWebPart", "TeamsPersonalApp", "TeamsTab", "SharePointFullPage"],
+  "supportsThemeVariants": true,
+  "supportsFullBleed": true,
+  "preconfiguredEntries": [
+    {
+      "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
+      "group": { "default": "Advanced" },
+      "title": { "default": "FTLApp" },
+      "description": { "default": "FTLApp starter web part" },
+      "officeFabricIconFontName": "Page",
+      "properties": {
+        "description": "FTLApp"
+      }
+    }
+  ]
+}
