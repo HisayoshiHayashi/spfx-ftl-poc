@@ -7,6 +7,7 @@ import ViewerIcon from './ViewerIcon';
 import styles from './FTLApp.module.scss';
 
 interface IScenarioDetailProps {
+  lightTheme: boolean;
   scenario: IScenario;
   isFavorite: boolean;
   favoritesDisabled: boolean;
@@ -50,11 +51,11 @@ export default function ScenarioDetail(props: IScenarioDetailProps): React.React
       isOpen={isOpen}
       onDismiss={() => setIsOpen(false)}
       onDismissed={onDismiss}
-      className={`${styles.detailModal} ${isOpen ? styles.detailModalOpening : ''}`}
+      className={`${styles.detailModal} ${props.lightTheme ? styles.lightTheme : ''} ${isOpen ? styles.detailModalOpening : ''}`}
       titleAriaId={`scenario-title-${scenario.id}`}
       layerProps={{ styles: { root: { zIndex: 100010 } } }}
       styles={{
-        main: { background: '#11151d', color: '#e3e8ee', width: 'calc(100% - 40px)', maxWidth: 960, maxHeight: '92vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+        main: { background: props.lightTheme ? '#ffffff' : '#11151d', color: props.lightTheme ? '#28313d' : '#e3e8ee', width: 'calc(100% - 40px)', maxWidth: 960, maxHeight: '92vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
         scrollableContent: { maxHeight: '92vh', minHeight: 0, overflowY: 'auto' }
       }}
     >

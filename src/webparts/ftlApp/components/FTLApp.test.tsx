@@ -3,7 +3,7 @@ const mockSave = jest.fn();
 
 jest.mock('../data/images', () => ({ scenarioImages: {} }));
 jest.mock('./FTLApp.module.scss', () => ({ listLoading: 'listLoading' }), { virtual: true });
-jest.mock('./ScenarioDetail', () => ({ __esModule: true, default: () => undefined }));
+jest.mock('./ScenarioDetail', () => ({ __esModule: true, default: jest.fn(() => null) }));
 jest.mock('../services/FavoritesService', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => ({
@@ -18,6 +18,7 @@ import * as ReactDom from 'react-dom';
 import { act } from 'react-dom/test-utils';
 import type { SPHttpClient } from '@microsoft/sp-http';
 import FTLApp from './FTLApp';
+import ScenarioDetail from './ScenarioDetail';
 
 const client: Pick<SPHttpClient, 'get' | 'post'> = { get: jest.fn(), post: jest.fn() };
 
@@ -121,7 +122,7 @@ describe('Viewer SharePoint favorites UI', () => {
     expect(container.querySelector('header input[type="search"]')).toBeNull();
     expect(container.querySelector('main input[type="search"]')).not.toBeNull();
     await clickButton('さらに表示');
-    const home = container.querySelector('article')?.closest('main')?.parentElement;
+    const home = container.querySelector('article')?.closest('main')?.parentElement?.parentElement;
     const firstCard = container.querySelector('article');
     expect(home).not.toBeNull();
     await clickButton('ABOUT');
@@ -154,6 +155,65 @@ describe('Viewer SharePoint favorites UI', () => {
     if (!back) throw new Error('About back button not rendered');
     act(() => { back.focus(); });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('preserves HOME state while toggling themes and saves the selected theme', async () => {
+    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    await render();
+    const firstCard = container.querySelector('article');
+    const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="ライトモードに切り替える"]');
+    if (!toggle) throw new Error('Theme toggle not rendered');
+    expect(toggle.parentElement?.lastElementChild).toBe(toggle);
+    act(() => { toggle.click(); });
+    expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('light');
+    expect(window.localStorage.getItem('ftl-app:theme:v1')).toBe('light');
+    expect(container.querySelector('article')).toBe(firstCard);
+    await clickButton('ABOUT');
+    expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('light');
+    await clickButton('HOME');
+    const darkToggle = container.querySelector<HTMLButtonElement>('button[aria-label="ダークモードに切り替える"]');
+    if (!darkToggle) throw new Error('Dark theme toggle not rendered');
+    act(() => { darkToggle.click(); });
+    expect(window.localStorage.getItem('ftl-app:theme:v1')).toBe('dark');
+  });
+
+  it('restores light mode and applies it to modal and portal notifications', async () => {
+    window.localStorage.setItem('ftl-app:theme:v1', 'light');
+    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockSave.mockReturnValue(new Promise(() => undefined));
+    await render();
+    expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('light');
+    act(() => { favoriteButton().click(); });
+    expect(document.body.querySelector('[data-theme="light"][role="status"]')).not.toBeNull();
+    const detail = container.querySelector<HTMLButtonElement>('article button[aria-label$="の詳細"]');
+    if (!detail) throw new Error('Detail button not rendered');
+    act(() => { detail.click(); });
+    expect(ScenarioDetail).toHaveBeenLastCalledWith(expect.objectContaining({ lightTheme: true }), expect.anything());
+  });
+
+  it('reports a storage failure while still changing the displayed theme', async () => {
+    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    await render();
+    const write = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage blocked'); });
+    try {
+      const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="ライトモードに切り替える"]');
+      if (!toggle) throw new Error('Theme toggle not rendered');
+      act(() => { toggle.click(); });
+      expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('light');
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain('表示テーマを保存できませんでした');
+      expect(consoleError).toHaveBeenCalled();
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it('reports invalid saved theme settings and explicitly uses dark mode', async () => {
+    window.localStorage.setItem('ftl-app:theme:v1', 'invalid');
+    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    await render();
+    expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('dark');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('表示テーマの設定を読み込めませんでした');
+    expect(consoleError).toHaveBeenCalled();
   });
 
   it('prefers an existing server row and never imports the old browser data again', async () => {

@@ -8,7 +8,7 @@ export default function CategoryTags({ names }: { names: string[] }): React.Reac
       {names.map(name => {
         const category = categories.find(item => item.name === name);
         const color = category ? category.color : '#94a3b8';
-        return <span key={name} className={styles.tag} style={{ color, borderColor: `${color}99`, backgroundColor: `${color}26` }}>{name}</span>;
+        return <span key={name} className={styles.tag} style={{ color: `var(--category-text, ${color})`, borderColor: `var(--category-border, ${color}99)`, backgroundColor: `var(--category-background, ${color}26)` }}>{name}</span>;
       })}
     </span>
   );

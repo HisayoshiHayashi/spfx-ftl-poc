@@ -14,6 +14,7 @@ import FavoriteToast from './FavoriteToast';
 const scenarios: IScenario[] = scenarioData;
 const years = [2030, 2035, 2040, 2045, 2050];
 const favoriteStorageKey = 'ftl-app:scenario-favorites:v1';
+const themeStorageKey = 'ftl-app:theme:v1';
 
 export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppProps> {
   const [year, setYear] = React.useState<number>();
@@ -40,6 +41,27 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuButton = React.useRef<HTMLButtonElement>(null);
   const [listReady, setListReady] = React.useState(false);
+  const [appearance, setAppearance] = React.useState<{ light: boolean; error?: string }>(() => {
+    try {
+      const stored = window.localStorage.getItem(themeStorageKey);
+      if (stored !== null && stored !== 'light' && stored !== 'dark') throw new Error('Invalid saved theme');
+      return { light: stored === 'light' };
+    } catch (cause) {
+      console.error('FTLApp: 表示テーマを読み込めませんでした。', cause);
+      return { light: false, error: '表示テーマの設定を読み込めませんでした。ダークモードで表示しています。' };
+    }
+  });
+
+  const toggleTheme = (): void => {
+    const light = !appearance.light;
+    try {
+      window.localStorage.setItem(themeStorageKey, light ? 'light' : 'dark');
+      setAppearance({ light });
+    } catch (cause) {
+      console.error('FTLApp: 表示テーマを保存できませんでした。', cause);
+      setAppearance({ light, error: '表示テーマを保存できませんでした。この画面には反映していますが、再読み込み後は保持されません。' });
+    }
+  };
 
   React.useEffect(() => {
     let frame = window.requestAnimationFrame(() => {
@@ -137,11 +159,11 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
     setFavoritesOnly(false);
   };
 
-  const notification = <FavoriteToast saving={saving} error={pendingSave ? storageError : undefined} success={saveSuccess}
+  const notification = <FavoriteToast lightTheme={appearance.light} saving={saving} error={pendingSave ? storageError : undefined} success={saveSuccess}
     inline={selected !== undefined} onRetry={() => persistFavorites(favorites)} onDismiss={() => setSaveSuccess(false)} />;
 
   return (
-    <section className={`${styles.ftlApp} ${props.isFullScreen ? styles.fullScreen : ''}`}>
+    <section data-theme={appearance.light ? 'light' : 'dark'} className={`${styles.ftlApp} ${appearance.light ? styles.lightTheme : ''} ${props.isFullScreen ? styles.fullScreen : ''}`}>
       <header className={styles.header}>
         <div className={styles.brand}>
           <h1><span>未来年表</span><span className={styles.brandEnglish} lang="en">Future Time Line</span></h1>
@@ -163,9 +185,14 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
             <button type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => { setPage('home'); setMenuOpen(false); if (menuOpen) menuButton.current?.focus(); }}>HOME</button>
             <button type="button" aria-current={page === 'about' ? 'page' : undefined} onClick={() => { setPage('about'); setMenuOpen(false); if (menuOpen) menuButton.current?.focus(); }}>ABOUT</button>
           </nav>
+          <button type="button" className={styles.themeToggle} aria-label={appearance.light ? 'ダークモードに切り替える' : 'ライトモードに切り替える'} onClick={toggleTheme} title={appearance.light ? 'ダークモードに切り替える' : 'ライトモードに切り替える'}>
+            <ViewerIcon name={appearance.light ? 'moon' : 'sun'} />
+          </button>
         </div>
       </header>
+      {appearance.error && <div role="alert" className={`${styles.error} ${styles.themeError}`}>{appearance.error}<button type="button" onClick={() => setAppearance({ light: appearance.light })}>閉じる</button></div>}
       <div className={styles.layout} hidden={page !== 'home'}>
+        <div className={styles.layoutContent}>
         <aside className={`${styles.sidebar} ${showFilters ? styles.sidebarOpen : ''}`} aria-label="シナリオ絞り込み">
           <div className={styles.filterGroup}>
             <h2>お気に入り</h2>
@@ -228,8 +255,10 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
           ))}
           {listReady && limit < filtered.length && <div className={styles.loadMore}><button type="button" onClick={() => setLimit(limit + 40)}>さらに表示</button><span>{Math.min(limit, filtered.length)} / {filtered.length} 件</span></div>}
         </main>
+        </div>
       </div>
       {page === 'about' && <div className={styles.layout}>
+        <div className={styles.layoutContent}>
         <main className={styles.main} aria-labelledby="about-title">
           <section className={styles.about}>
             <span className={styles.sectionLabel}>ABOUT</span>
@@ -239,8 +268,9 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
             <button type="button" className={styles.filterButton} onClick={() => setPage('home')}>HOMEに戻る</button>
           </section>
         </main>
+        </div>
       </div>}
-      {selected && <ScenarioDetail scenario={selected} isFavorite={favorites.indexOf(selected.id) !== -1} favoritesDisabled={!favoritesReady || (pendingSave && !saving)} favoritesSaving={saving} favoriteStatus={!favoritesReady ? storageError || 'お気に入りを読み込み中…' : undefined} notification={notification} onFavorite={toggleFavorite} onDismiss={() => setSelected(undefined)} />}
+      {selected && <ScenarioDetail lightTheme={appearance.light} scenario={selected} isFavorite={favorites.indexOf(selected.id) !== -1} favoritesDisabled={!favoritesReady || (pendingSave && !saving)} favoritesSaving={saving} favoriteStatus={!favoritesReady ? storageError || 'お気に入りを読み込み中…' : undefined} notification={notification} onFavorite={toggleFavorite} onDismiss={() => setSelected(undefined)} />}
       {!selected && notification}
     </section>
   );

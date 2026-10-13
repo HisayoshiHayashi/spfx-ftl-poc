@@ -4,6 +4,7 @@ import { Spinner, SpinnerSize } from '@fluentui/react/lib/Spinner';
 import styles from './FTLApp.module.scss';
 
 interface IFavoriteToastProps {
+  lightTheme: boolean;
   saving: boolean;
   error?: string;
   success: boolean;
@@ -15,9 +16,9 @@ interface IFavoriteToastProps {
 export default function FavoriteToast(props: IFavoriteToastProps): React.ReactElement {
   if (!props.saving && !props.error && !props.success) return <></>;
   const notification = (
-    <div className={`${styles.favoriteToast} ${props.error ? styles.toastError : ''}`}
+    <div data-theme={props.lightTheme ? 'light' : 'dark'} className={`${styles.favoriteToast} ${props.lightTheme ? styles.lightTheme : ''} ${props.error ? styles.toastError : ''}`}
       role={props.error ? 'alert' : 'status'} aria-live={props.error ? 'assertive' : 'polite'} aria-atomic="true">
-      {props.saving && <Spinner size={SpinnerSize.small} styles={{ circle: { borderColor: '#475569', borderTopColor: '#a5b4fc' } }} />}
+      {props.saving && <Spinner size={SpinnerSize.small} styles={{ circle: { borderColor: '#8eace8', borderTopColor: '#ffffff' } }} />}
       <div className={styles.toastMessage}>
         {props.error || (props.saving ? 'お気に入りを保存中…' : 'お気に入りを保存しました')}
       </div>

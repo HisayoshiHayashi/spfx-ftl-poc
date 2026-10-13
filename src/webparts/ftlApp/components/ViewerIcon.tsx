@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-type IconName = 'heart' | 'search' | 'grid' | 'list' | 'close' | 'arrow' | 'filter' | 'menu';
+type IconName = 'heart' | 'search' | 'grid' | 'list' | 'close' | 'arrow' | 'filter' | 'menu' | 'sun' | 'moon';
 
 export default function ViewerIcon({ name }: { name: IconName }): React.ReactElement {
   const paths: Record<IconName, React.ReactNode> = {
@@ -11,7 +11,9 @@ export default function ViewerIcon({ name }: { name: IconName }): React.ReactEle
     close: <path d="m6 6 12 12M6 18 18 6" />,
     arrow: <path d="M4 12h16m-6-6 6 6-6 6" />,
     filter: <path d="M3 4h18l-7 8v7l-4 2v-9Z" />,
-    menu: <path d="M3 6h18M3 12h18M3 18h18" />
+    menu: <path d="M3 6h18M3 12h18M3 18h18" />,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5" /></>,
+    moon: <path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z" />
   };
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
