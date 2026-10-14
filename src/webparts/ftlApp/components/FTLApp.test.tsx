@@ -1,8 +1,10 @@
 const mockLoad = jest.fn();
 const mockSave = jest.fn();
+const mockEvaluationLoad = jest.fn();
+const mockEvaluationSave = jest.fn();
 
 jest.mock('../data/images', () => ({ scenarioImages: {} }));
-jest.mock('./FTLApp.module.scss', () => ({ listLoading: 'listLoading' }), { virtual: true });
+jest.mock('./FTLApp.module.scss', () => ({ listLoading: 'listLoading', headerUser: 'headerUser', userAvatar: 'userAvatar', userPoints: 'userPoints' }), { virtual: true });
 jest.mock('./ScenarioDetail', () => ({ __esModule: true, default: jest.fn(() => null) }));
 jest.mock('../services/FavoritesService', () => ({
   __esModule: true,
@@ -10,6 +12,13 @@ jest.mock('../services/FavoritesService', () => ({
     load: mockLoad,
     save: mockSave,
     migrationKey: 'test-migration-current-user'
+  }))
+}));
+jest.mock('../services/ScenarioEvaluationService', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    load: mockEvaluationLoad,
+    save: mockEvaluationSave
   }))
 }));
 
@@ -32,6 +41,8 @@ describe('Viewer SharePoint favorites UI', () => {
   beforeEach(() => {
     mockLoad.mockReset();
     mockSave.mockReset();
+    mockEvaluationLoad.mockReset();
+    mockEvaluationSave.mockReset();
     window.localStorage.clear();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -59,6 +70,7 @@ describe('Viewer SharePoint favorites UI', () => {
     await act(async () => {
       ReactDom.render(
         <FTLApp description="test" isFullScreen={false} isServedFromLocalhost
+          userDisplayName="山田 花子" userEmail="hanako@example.com"
           spHttpClient={client} webUrl="https://example.sharepoint.com/sites/-TMC-" />,
         container
       );
@@ -108,7 +120,7 @@ describe('Viewer SharePoint favorites UI', () => {
   });
 
   it('cancels the pending initial frame when unmounted', async () => {
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 125 });
     await render(false);
     paintFrame();
     const pendingFrame = requestFrame.mock.results[requestFrame.mock.results.length - 1].value;
@@ -117,7 +129,7 @@ describe('Viewer SharePoint favorites UI', () => {
   });
 
   it('switches between HOME and ABOUT while preserving the list and keeping search outside the header', async () => {
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 0 });
     await render();
     expect(container.querySelector('header input[type="search"]')).toBeNull();
     expect(container.querySelector('main input[type="search"]')).not.toBeNull();
@@ -138,7 +150,7 @@ describe('Viewer SharePoint favorites UI', () => {
   });
 
   it('closes mobile navigation after selection, Escape and focus leaving the menu', async () => {
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 0 });
     await render();
     const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="ページメニューを開く"]');
     if (!toggle) throw new Error('Menu toggle not rendered');
@@ -158,12 +170,14 @@ describe('Viewer SharePoint favorites UI', () => {
   });
 
   it('preserves HOME state while toggling themes and saves the selected theme', async () => {
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 0 });
     await render();
     const firstCard = container.querySelector('article');
     const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="ライトモードに切り替える"]');
     if (!toggle) throw new Error('Theme toggle not rendered');
-    expect(toggle.parentElement?.lastElementChild).toBe(toggle);
+    const headerActions = toggle.parentElement;
+    expect(headerActions?.lastElementChild?.classList.contains('headerUser')).toBe(true);
+    expect(headerActions?.lastElementChild?.previousElementSibling).toBe(toggle);
     act(() => { toggle.click(); });
     expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('light');
     expect(window.localStorage.getItem('ftl-app:theme:v1')).toBe('light');
@@ -177,9 +191,28 @@ describe('Viewer SharePoint favorites UI', () => {
     expect(window.localStorage.getItem('ftl-app:theme:v1')).toBe('dark');
   });
 
+  it('shows the current SharePoint user identity in the header', async () => {
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 125 });
+    await render();
+    const user = container.querySelector('[aria-label="ログイン中のポイント: 125ポイント"]');
+    expect(user).not.toBeNull();
+    expect(user?.querySelector('img')?.getAttribute('src')).toContain('userphoto.aspx?size=M&accountname=hanako%40example.com');
+    expect(user?.textContent).toContain('125pt');
+    expect(user?.textContent).not.toContain('山田 花子');
+    expect(user?.textContent).not.toContain('hanako@example.com');
+    expect(user?.parentElement?.lastElementChild).toBe(user);
+    expect(user?.parentElement?.lastElementChild?.classList.contains('headerUser')).toBe(true);
+    act(() => {
+      user?.querySelector('img')?.dispatchEvent(new Event('error', { bubbles: false }));
+    });
+    expect(user?.querySelector('img')).toBeNull();
+    expect(user?.textContent).toContain('125pt');
+    expect(user?.querySelector('img')).toBeNull();
+  });
+
   it('restores light mode and applies it to modal and portal notifications', async () => {
     window.localStorage.setItem('ftl-app:theme:v1', 'light');
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 0 });
     mockSave.mockReturnValue(new Promise(() => undefined));
     await render();
     expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('light');
@@ -192,7 +225,7 @@ describe('Viewer SharePoint favorites UI', () => {
   });
 
   it('reports a storage failure while still changing the displayed theme', async () => {
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 0 });
     await render();
     const write = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage blocked'); });
     try {
@@ -209,7 +242,7 @@ describe('Viewer SharePoint favorites UI', () => {
 
   it('reports invalid saved theme settings and explicitly uses dark mode', async () => {
     window.localStorage.setItem('ftl-app:theme:v1', 'invalid');
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 0 });
     await render();
     expect(container.querySelector('section[data-theme]')?.getAttribute('data-theme')).toBe('dark');
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('表示テーマの設定を読み込めませんでした');
@@ -218,7 +251,7 @@ describe('Viewer SharePoint favorites UI', () => {
 
   it('prefers an existing server row and never imports the old browser data again', async () => {
     window.localStorage.setItem('ftl-app:scenario-favorites:v1', '["MS00001"]');
-    mockLoad.mockResolvedValue({ ids: ['MS00002'], exists: true });
+    mockLoad.mockResolvedValue({ ids: ['MS00002'], exists: true, points: 0 });
     await render();
     expect(favoriteButton().getAttribute('aria-pressed')).toBe('false');
     expect(container.textContent).not.toContain('リストに移行して保存');
@@ -227,7 +260,7 @@ describe('Viewer SharePoint favorites UI', () => {
 
   it('moves legacy IDs on first save and marks migration complete only after success', async () => {
     window.localStorage.setItem('ftl-app:scenario-favorites:v1', '["MS00001"]');
-    mockLoad.mockResolvedValue({ ids: [], exists: false });
+    mockLoad.mockResolvedValue({ ids: [], exists: false, points: 0 });
     mockSave.mockResolvedValue(['MS00001']);
     await render();
     expect(favoriteButton().getAttribute('aria-pressed')).toBe('true');
@@ -239,7 +272,7 @@ describe('Viewer SharePoint favorites UI', () => {
   });
 
   it('keeps failed changes for retry without pretending they were persisted', async () => {
-    mockLoad.mockResolvedValue({ ids: [], exists: false });
+    mockLoad.mockResolvedValue({ ids: [], exists: false, points: 0 });
     mockSave.mockRejectedValueOnce(new Error('HTTP 403')).mockResolvedValueOnce(['MS00001']);
     await render();
     await act(async () => { favoriteButton().click(); });
@@ -253,7 +286,7 @@ describe('Viewer SharePoint favorites UI', () => {
   });
 
   it('disables favorite edits on load failure and can retry loading', async () => {
-    mockLoad.mockRejectedValueOnce(new Error('List missing')).mockResolvedValueOnce({ ids: [], exists: false });
+    mockLoad.mockRejectedValueOnce(new Error('List missing')).mockResolvedValueOnce({ ids: [], exists: false, points: 0 });
     await render();
     expect(container.textContent).toContain('List missing');
     expect(favoriteButton().disabled).toBe(true);
@@ -265,14 +298,14 @@ describe('Viewer SharePoint favorites UI', () => {
   it('does not resurrect old favorites after this user has already migrated', async () => {
     window.localStorage.setItem('ftl-app:scenario-favorites:v1', '["MS00001"]');
     window.localStorage.setItem('test-migration-current-user', 'completed');
-    mockLoad.mockResolvedValue({ ids: [], exists: false });
+    mockLoad.mockResolvedValue({ ids: [], exists: false, points: 0 });
     await render();
     expect(favoriteButton().getAttribute('aria-pressed')).toBe('false');
     expect(container.textContent).not.toContain('リストに移行して保存');
   });
 
   it('shows a saving toast without moving the list, then auto-dismisses success after three seconds', async () => {
-    mockLoad.mockResolvedValue({ ids: [], exists: true });
+    mockLoad.mockResolvedValue({ ids: [], exists: true, points: 0 });
     let complete: ((ids: string[]) => void) | undefined;
     mockSave.mockImplementation(() => new Promise<string[]>(resolve => { complete = resolve; }));
     await render();

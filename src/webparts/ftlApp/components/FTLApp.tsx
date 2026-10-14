@@ -9,6 +9,8 @@ import ViewerIcon from './ViewerIcon';
 import CategoryTags from './CategoryTags';
 import ScenarioDetail from './ScenarioDetail';
 import FavoritesService from '../services/FavoritesService';
+import ScenarioEvaluationService, { IScenarioEvaluation } from '../services/ScenarioEvaluationService';
+import type { IScenarioEvaluationSnapshot } from '../services/ScenarioEvaluationService';
 import FavoriteToast from './FavoriteToast';
 
 const scenarios: IScenario[] = scenarioData;
@@ -22,6 +24,7 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
   const [query, setQuery] = React.useState('');
   const [favoritesOnly, setFavoritesOnly] = React.useState(false);
   const [favorites, setFavorites] = React.useState<string[]>([]);
+  const [points, setPoints] = React.useState(0);
   const [storageError, setStorageError] = React.useState<string>();
   const [migrationWarning, setMigrationWarning] = React.useState<string>();
   const [favoritesReady, setFavoritesReady] = React.useState(false);
@@ -33,6 +36,7 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
   const savedFavorites = React.useRef<string[]>([]);
   const saveInFlight = React.useRef(false);
   const service = React.useMemo(() => new FavoritesService(props.spHttpClient, props.webUrl), [props.spHttpClient, props.webUrl]);
+  const evaluationService = React.useMemo(() => new ScenarioEvaluationService(props.spHttpClient, props.webUrl), [props.spHttpClient, props.webUrl]);
   const [view, setView] = React.useState<'grid' | 'list'>('grid');
   const [selected, setSelected] = React.useState<IScenario>();
   const [limit, setLimit] = React.useState(40);
@@ -41,6 +45,7 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuButton = React.useRef<HTMLButtonElement>(null);
   const [listReady, setListReady] = React.useState(false);
+  const [userPhotoFailed, setUserPhotoFailed] = React.useState(false);
   const [appearance, setAppearance] = React.useState<{ light: boolean; error?: string }>(() => {
     try {
       const stored = window.localStorage.getItem(themeStorageKey);
@@ -62,6 +67,10 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
       setAppearance({ light, error: '表示テーマを保存できませんでした。この画面には反映していますが、再読み込み後は保持されません。' });
     }
   };
+  const userPhotoAccount = props.userEmail || props.userLoginName;
+  const userPhotoUrl = userPhotoAccount
+    ? `${window.location.origin}/_layouts/15/userphoto.aspx?size=M&accountname=${encodeURIComponent(userPhotoAccount)}`
+    : undefined;
 
   React.useEffect(() => {
     let frame = window.requestAnimationFrame(() => {
@@ -79,6 +88,7 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
     service.load().then(snapshot => {
       if (!active) return;
       savedFavorites.current = snapshot.ids;
+      setPoints(snapshot.points);
       let ids = snapshot.ids;
       if (!snapshot.exists) {
         try {
@@ -152,6 +162,22 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
     persistFavorites(next);
   };
 
+  const loadEvaluation = React.useCallback(async (id: string): Promise<IScenarioEvaluationSnapshot> => {
+    if (!favoritesReady) throw new Error('ポイント情報を読み込み中です。評価を再読み込みしてください。');
+    const snapshot = await evaluationService.load(id);
+    const updatedPoints = await service.reconcileEvaluationPoints(snapshot.evaluationCount);
+    setPoints(updatedPoints);
+    return snapshot;
+  }, [evaluationService, favoritesReady, service]);
+
+  const saveEvaluation = React.useCallback(async (id: string, evaluation: IScenarioEvaluation): Promise<IScenarioEvaluationSnapshot> => {
+    if (!favoritesReady) throw new Error('ポイント情報が準備できていません。評価を保存できません。');
+    const snapshot = await evaluationService.save(id, evaluation);
+    const updatedPoints = await service.reconcileEvaluationPoints(snapshot.evaluationCount);
+    setPoints(updatedPoints);
+    return snapshot;
+  }, [evaluationService, favoritesReady, service]);
+
   const clearFilters = (): void => {
     setYear(undefined);
     setCategory(undefined);
@@ -188,6 +214,14 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
           <button type="button" className={styles.themeToggle} aria-label={appearance.light ? 'ダークモードに切り替える' : 'ライトモードに切り替える'} onClick={toggleTheme} title={appearance.light ? 'ダークモードに切り替える' : 'ライトモードに切り替える'}>
             <ViewerIcon name={appearance.light ? 'moon' : 'sun'} />
           </button>
+          {props.userDisplayName && <div className={styles.headerUser} title={`${points.toLocaleString()} pt`} aria-label={`ログイン中のポイント: ${points.toLocaleString()}ポイント`}>
+            <span className={styles.userAvatar} aria-label="プロフィール写真">
+              {userPhotoUrl && !userPhotoFailed
+                ? <img src={userPhotoUrl} alt="" onError={() => setUserPhotoFailed(true)} />
+                : <span aria-hidden="true">{Array.from(props.userDisplayName.trim())[0]}</span>}
+            </span>
+            <span className={styles.userPoints}><strong>{points.toLocaleString()}</strong><span>pt</span></span>
+          </div>}
         </div>
       </header>
       {appearance.error && <div role="alert" className={`${styles.error} ${styles.themeError}`}>{appearance.error}<button type="button" onClick={() => setAppearance({ light: appearance.light })}>閉じる</button></div>}
@@ -228,7 +262,7 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
           {(!listReady || (!favoritesReady && !storageError)) && <div className={styles.listLoading} role="status"><Spinner label={!listReady ? 'シナリオを読み込み中…' : 'お気に入りをリストから読み込み中…'} /></div>}
           {migrationPending && !pendingSave && <div className={styles.persistenceNotice}>このブラウザーの旧お気に入り{favorites.length}件を移行できます。旧データにはユーザー情報がありません。ご自身のデータであることを確認して保存してください。<button type="button" disabled={saving} onClick={() => persistFavorites(favorites)}>リストに移行して保存</button></div>}
           {migrationWarning && <p role="alert" className={styles.error}>{migrationWarning}</p>}
-          {storageError && !pendingSave && <div role="alert" className={styles.error}>{storageError}<button type="button" disabled={saving} onClick={() => setReload(reload + 1)}>再試行</button></div>}
+          {storageError && !pendingSave && <div role="alert" className={`${styles.error} ${styles.storageError}`}>{storageError}<button type="button" disabled={saving} onClick={() => setReload(reload + 1)}>再試行</button></div>}
           {listReady && (filtered.length === 0 ? <div className={styles.empty}><ViewerIcon name="search" /><h2>シナリオが見つかりませんでした</h2><p>キーワードや絞り込み条件を変更してください。</p><button type="button" onClick={clearFilters}>すべてのシナリオを見る</button></div> : (
             <div key={`${view}:${year}:${category}:${favoritesOnly}`} className={`${styles.grid} ${view === 'list' ? styles.listView : ''}`}>
               {filtered.slice(0, limit).map((scenario, index) => {
@@ -242,7 +276,6 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
                         <CategoryTags names={scenario.categories} />
                       </span>
                       <span className={styles.cardBody}>
-                        <span className={styles.scenarioId}>{scenario.id}</span>
                         <span className={styles.cardTitle}>{scenario.title}</span>
                         <span className={styles.cardSummary}>{scenario.summary}</span>
                       </span>
@@ -270,7 +303,7 @@ export default function FTLApp(props: IFTLAppProps): React.ReactElement<IFTLAppP
         </main>
         </div>
       </div>}
-      {selected && <ScenarioDetail lightTheme={appearance.light} scenario={selected} isFavorite={favorites.indexOf(selected.id) !== -1} favoritesDisabled={!favoritesReady || (pendingSave && !saving)} favoritesSaving={saving} favoriteStatus={!favoritesReady ? storageError || 'お気に入りを読み込み中…' : undefined} notification={notification} onFavorite={toggleFavorite} onDismiss={() => setSelected(undefined)} />}
+      {selected && <ScenarioDetail lightTheme={appearance.light} scenario={selected} isFavorite={favorites.indexOf(selected.id) !== -1} favoritesDisabled={!favoritesReady || (pendingSave && !saving)} favoritesSaving={saving} favoriteStatus={!favoritesReady ? storageError || 'お気に入りを読み込み中…' : undefined} notification={notification} onFavorite={toggleFavorite} loadEvaluation={loadEvaluation} saveEvaluation={saveEvaluation} onDismiss={() => setSelected(undefined)} />}
       {!selected && notification}
     </section>
   );

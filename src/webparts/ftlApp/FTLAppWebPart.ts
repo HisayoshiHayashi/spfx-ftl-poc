@@ -32,6 +32,9 @@ export default class FTLAppWebPart extends BaseClientSideWebPart<IFTLAppWebPartP
         description: this.properties.description,
         isServedFromLocalhost: this.context.isServedFromLocalhost,
         isFullScreen: this.displayMode === DisplayMode.Read,
+        userDisplayName: this.context.pageContext.user.displayName,
+        userEmail: this.context.pageContext.user.email,
+        userLoginName: this.context.pageContext.user.loginName,
         spHttpClient: this.context.spHttpClient,
         webUrl: this.context.pageContext.web.absoluteUrl
       }

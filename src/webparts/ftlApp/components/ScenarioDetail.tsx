@@ -5,6 +5,7 @@ import { scenarioImages } from '../data/images';
 import CategoryTags from './CategoryTags';
 import ViewerIcon from './ViewerIcon';
 import styles from './FTLApp.module.scss';
+import type { IScenarioEvaluation, IScenarioEvaluationSnapshot } from '../services/ScenarioEvaluationService';
 
 interface IScenarioDetailProps {
   lightTheme: boolean;
@@ -14,6 +15,8 @@ interface IScenarioDetailProps {
   favoritesSaving: boolean;
   favoriteStatus?: string;
   notification?: React.ReactNode;
+  loadEvaluation: (id: string) => Promise<IScenarioEvaluationSnapshot>;
+  saveEvaluation: (id: string, evaluation: IScenarioEvaluation) => Promise<IScenarioEvaluationSnapshot>;
   onFavorite: (id: string) => void;
   onDismiss: () => void;
 }
@@ -24,6 +27,15 @@ export default function ScenarioDetail(props: IScenarioDetailProps): React.React
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string>();
   const [isOpen, setIsOpen] = React.useState(true);
+  const [evaluation, setEvaluation] = React.useState<IScenarioEvaluation>();
+  const [answers, setAnswers] = React.useState<Partial<IScenarioEvaluation>>({});
+  const [evaluationLoading, setEvaluationLoading] = React.useState(true);
+  const [evaluationSaving, setEvaluationSaving] = React.useState(false);
+  const [evaluationError, setEvaluationError] = React.useState<string>();
+  const [evaluationStatus, setEvaluationStatus] = React.useState<string>();
+  const [evaluationReload, setEvaluationReload] = React.useState(0);
+  const [evaluationOpen, setEvaluationOpen] = React.useState(false);
+  const evaluationTrigger = React.useRef<HTMLButtonElement>(null);
 
   React.useEffect(() => {
     let active = true;
@@ -46,6 +58,54 @@ export default function ScenarioDetail(props: IScenarioDetailProps): React.React
     return () => { active = false; };
   }, [scenario.id]);
 
+  React.useEffect(() => {
+    let active = true;
+    setEvaluationLoading(true);
+    setEvaluationError(undefined);
+    setEvaluationStatus(undefined);
+    props.loadEvaluation(scenario.id).then(snapshot => {
+      if (!active) return;
+      setEvaluation(snapshot.evaluation);
+      setAnswers(snapshot.evaluation || {});
+      setEvaluationLoading(false);
+    }).catch((cause: unknown) => {
+      console.error('FTLApp: シナリオ評価の読み込みに失敗しました。', cause);
+      if (!active) return;
+      setEvaluationError(cause instanceof Error ? cause.message : '評価を読み込めませんでした。');
+      setEvaluationLoading(false);
+    });
+    return () => { active = false; };
+  }, [props.loadEvaluation, scenario.id, evaluationReload]);
+
+  const submitEvaluation = (): void => {
+    if (evaluationLoading || evaluationSaving ||
+      (answers.willHappen !== -1 && answers.willHappen !== 1) ||
+      (answers.lifeImpact !== -1 && answers.lifeImpact !== 1) ||
+      (answers.wantItCome !== -1 && answers.wantItCome !== 1)) return;
+    const submitted: IScenarioEvaluation = {
+      willHappen: answers.willHappen,
+      lifeImpact: answers.lifeImpact,
+      wantItCome: answers.wantItCome
+    };
+    setEvaluationSaving(true);
+    setEvaluationError(undefined);
+    setEvaluationStatus(undefined);
+    props.saveEvaluation(scenario.id, submitted).then(snapshot => {
+      setEvaluation(snapshot.evaluation);
+      setEvaluationStatus(evaluation ? '評価を更新しました。ポイントは付与されません。' : '評価を保存しました。1ptを獲得しました。');
+      setEvaluationSaving(false);
+    }).catch((cause: unknown) => {
+      console.error('FTLApp: シナリオ評価の保存に失敗しました。', cause);
+      setEvaluationError(cause instanceof Error ? cause.message : '評価を保存できませんでした。');
+      setEvaluationSaving(false);
+    });
+  };
+
+  const closeEvaluation = (): void => {
+    setEvaluationOpen(false);
+    window.requestAnimationFrame(() => evaluationTrigger.current?.focus());
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -55,8 +115,8 @@ export default function ScenarioDetail(props: IScenarioDetailProps): React.React
       titleAriaId={`scenario-title-${scenario.id}`}
       layerProps={{ styles: { root: { zIndex: 100010 } } }}
       styles={{
-        main: { background: props.lightTheme ? '#ffffff' : '#11151d', color: props.lightTheme ? '#28313d' : '#e3e8ee', width: 'calc(100% - 40px)', maxWidth: 960, maxHeight: '92vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
-        scrollableContent: { maxHeight: '92vh', minHeight: 0, overflowY: 'auto' }
+        main: { background: props.lightTheme ? '#ffffff' : '#11151d', color: props.lightTheme ? '#28313d' : '#e3e8ee', width: 'calc(100% - 40px)', maxWidth: 960, height: '92vh', maxHeight: '92vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+        scrollableContent: { flex: '1 1 auto', maxHeight: '92vh', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }
       }}
     >
       <div className={styles.detail}>
@@ -68,8 +128,8 @@ export default function ScenarioDetail(props: IScenarioDetailProps): React.React
           </div>
           {props.favoriteStatus && <p role="status" className={styles.error}>{props.favoriteStatus}</p>}
         </div>
-        <img className={styles.detailImage} src={scenarioImages[scenario.id]} alt={scenario.title} />
         <div className={styles.detailContent}>
+          <img className={styles.detailImage} src={scenarioImages[scenario.id]} alt={scenario.title} />
           <CategoryTags names={scenario.categories} />
           <h2 id={`scenario-title-${scenario.id}`}>{scenario.title}</h2>
           <p className={styles.summary}>{scenario.summary}</p>
@@ -96,6 +156,51 @@ export default function ScenarioDetail(props: IScenarioDetailProps): React.React
           </section>
           {(scenario.sourceClip || scenario.socialData) && <footer className={styles.references}><p>元兆しクリップ：{scenario.sourceClip || '—'}</p><p>参照社会データ：{scenario.socialData || '—'}</p></footer>}
         </div>
+        <div className={styles.evaluationDock}>
+          <button ref={evaluationTrigger} type="button" className={styles.evaluationLauncher} aria-label="評価フォームを開く" aria-haspopup="dialog" aria-expanded={evaluationOpen} onClick={() => setEvaluationOpen(true)}>
+            <strong>{evaluation ? '評価を編集する' : 'このシナリオを評価'}</strong>
+          </button>
+        </div>
+        {evaluationOpen && <div className={styles.evaluationOverlay} role="presentation" onClick={event => { if (event.target === event.currentTarget) closeEvaluation(); }}>
+          <section className={styles.evaluationSheet} role="dialog" aria-modal="true" aria-labelledby={`evaluation-title-${scenario.id}`} onKeyDown={event => { if (event.key === 'Escape') closeEvaluation(); }}>
+            <header className={styles.evaluationSheetHeader}>
+              <div><span className={styles.sectionLabel}>YOUR EVALUATION</span><h2 id={`evaluation-title-${scenario.id}`}>未来を想像してみよう</h2></div>
+              <button type="button" className={styles.iconButton} aria-label="評価を閉じる" onClick={closeEvaluation}><ViewerIcon name="close" /></button>
+            </header>
+            {evaluationLoading && <p role="status">評価を読み込み中…</p>}
+            {evaluationError && <p role="alert" className={styles.error}>{evaluationError} <button type="button" disabled={evaluationSaving} onClick={() => setEvaluationReload(value => value + 1)}>再読み込み</button></p>}
+            {!evaluationLoading && !evaluationError && <>
+              {([
+                ['willHappen', '本当にくる？', 'きそう', 'こない'],
+                ['lifeImpact', '生活はかわる？', 'かわる', 'かわらない'],
+                ['wantItCome', '来たらうれしい？', '来てほしい', '来てほしくない']
+              ] as const).map(([key, question, positive, negative]) => (
+                <fieldset key={key} className={styles.evaluationQuestion} disabled={evaluationSaving}>
+                  <legend>{question}</legend>
+                  <div className={styles.evaluationChoices}>
+                    {([
+                      [1, positive],
+                      [-1, negative]
+                    ] as const).map(([score, label]) => {
+                      const selectedAnswer = answers[key] === score;
+                      return <label key={score} className={`${styles.evaluationChoice} ${selectedAnswer ? styles.evaluationChoiceSelected : ''}`}>
+                        <input type="radio" name={`${scenario.id}-${key}`} value={score} checked={selectedAnswer} onChange={() => {
+                          setAnswers(value => ({ ...value, [key]: score }));
+                        }} />
+                        <span>{label}</span>
+                      </label>;
+                    })}
+                  </div>
+                </fieldset>
+              ))}
+              <button type="button" className={styles.evaluationSubmit} disabled={evaluationSaving || answers.willHappen === undefined || answers.lifeImpact === undefined || answers.wantItCome === undefined} onClick={submitEvaluation}>
+                {evaluationSaving ? '保存中…' : evaluation ? '評価を更新する' : '評価する'}
+              </button>
+              {evaluation && <p className={styles.muted}>回答を変更できます。編集ではポイントは増えません。</p>}
+              {evaluationStatus && <p role="status" className={styles.evaluationStatus}>{evaluationStatus}</p>}
+            </>}
+          </section>
+        </div>}
         {props.notification}
       </div>
     </Modal>

@@ -3,6 +3,8 @@ import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 export interface IFavoritesSnapshot {
   ids: string[];
   exists: boolean;
+  points: number;
+  evaluationPoints: number;
 }
 
 interface IUser {
@@ -15,6 +17,8 @@ interface IFavoriteItem {
   id: number;
   etag: string;
   ids: string[];
+  points?: number;
+  evaluationPoints?: number;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -48,6 +52,8 @@ export default class FavoritesService {
   private _user: IUser | undefined;
   private _keyField: string = 'UserKey';
   private _jsonField: string = 'FavoritesJson';
+  private _pointsField: string = 'Points';
+  private _evaluationPointsField: string = 'EvaluationPoints';
   private _initialized: boolean = false;
 
   public constructor(private readonly _client: Pick<SPHttpClient, 'get' | 'post'>, private readonly _webUrl: string) {
@@ -91,6 +97,8 @@ export default class FavoritesService {
     };
     this._keyField = resolveField('UserKey', 'Text');
     this._jsonField = resolveField('FavoritesJson', 'Note');
+    this._pointsField = resolveField('Points', 'Number');
+    this._evaluationPointsField = resolveField('EvaluationPoints', 'Number');
     this._initialized = true;
   }
 
@@ -102,7 +110,7 @@ export default class FavoritesService {
   private async _readItem(): Promise<IFavoriteItem | undefined> {
     await this._initialize();
     if (!this._user) throw new Error('ユーザー情報がありません。');
-    const data = await this._get(`${this._listUrl}/items?$select=Id,AuthorId,${this._keyField},${this._jsonField}&$filter=AuthorId eq ${this._user.id}&$orderby=Id&$top=2`);
+    const data = await this._get(`${this._listUrl}/items?$select=Id,AuthorId,${this._keyField},${this._jsonField},${this._pointsField},${this._evaluationPointsField}&$filter=AuthorId eq ${this._user.id}&$orderby=Id&$top=2`);
     if (!Array.isArray(data.value)) throw new Error('お気に入りの取得結果が不正です。');
     if (data.value.length > 1 || data['@odata.nextLink'] || data['odata.nextLink']) {
       throw new Error('本人のお気に入り行が重複しています。管理者に行の統合を依頼してください。データは上書きしていません。');
@@ -115,12 +123,110 @@ export default class FavoritesService {
     }
     const etag = item['@odata.etag'] || item['odata.etag'];
     if (typeof etag !== 'string' || !etag) throw new Error('お気に入り行のETagを取得できませんでした。');
-    return { id: item.Id, etag, ids: parseFavoritesJson(item[this._jsonField]) };
+    const points = item[this._pointsField];
+    const evaluationPoints = item[this._evaluationPointsField];
+    if (points !== undefined && points !== null &&
+      (typeof points !== 'number' || !Number.isSafeInteger(points) || points < 0)) {
+      throw new Error('Points列の値が不正です。0以上の整数を設定してください。');
+    }
+    if (evaluationPoints !== undefined && evaluationPoints !== null &&
+      (typeof evaluationPoints !== 'number' || !Number.isSafeInteger(evaluationPoints) || evaluationPoints < 0)) {
+      throw new Error('EvaluationPoints列の値が不正です。0以上の整数を設定してください。');
+    }
+    return {
+      id: item.Id,
+      etag,
+      ids: parseFavoritesJson(item[this._jsonField]),
+      points: points === null || points === undefined ? undefined : points,
+      evaluationPoints: evaluationPoints === null || evaluationPoints === undefined ? undefined : evaluationPoints
+    };
   }
 
   public async load(): Promise<IFavoritesSnapshot> {
-    const item = await this._readItem();
-    return { ids: item ? item.ids : [], exists: item !== undefined };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const item = await this._readItem();
+      if (!this._user) throw new Error('ユーザー情報がありません。');
+      if (!item) {
+        const body = JSON.stringify({
+          Title: this._user.name,
+          [this._keyField]: this._user.login,
+          [this._jsonField]: JSON.stringify({ version: 1, scenarioIds: [] }),
+          [this._pointsField]: 0,
+          [this._evaluationPointsField]: 0
+        });
+        const response = await this._client.post(`${this._listUrl}/items`, SPHttpClient.configurations.v1, {
+          headers: {
+            Accept: 'application/json;odata=minimalmetadata',
+            'Content-Type': 'application/json;odata=nometadata'
+          },
+          body
+        });
+        await this._check(response, 'ユーザー情報の初期化');
+        const verified = await this._readItem();
+        if (!verified || verified.points === undefined || verified.evaluationPoints === undefined) throw new Error('作成したユーザー情報または初期ポイントを確認できませんでした。');
+        return { ids: verified.ids, exists: false, points: verified.points, evaluationPoints: verified.evaluationPoints };
+      }
+      if (item.points === undefined || item.evaluationPoints === undefined) {
+        const response = await this._client.post(`${this._listUrl}/items(${item.id})`, SPHttpClient.configurations.v1, {
+          headers: {
+            Accept: 'application/json;odata=minimalmetadata',
+            'Content-Type': 'application/json;odata=nometadata',
+            'IF-MATCH': item.etag,
+            'X-HTTP-Method': 'MERGE'
+          },
+          body: JSON.stringify({
+            ...(item.points === undefined ? { [this._pointsField]: 0 } : {}),
+            ...(item.evaluationPoints === undefined ? { [this._evaluationPointsField]: 0 } : {})
+          })
+        });
+        if (response.status === 412) continue;
+        await this._check(response, 'ポイントの初期化');
+        const verified = await this._readItem();
+        if (!verified) throw new Error('初期化後にユーザー情報の行を再取得できませんでした。');
+        if (verified.points === undefined) throw new Error('初期化後もPoints列の値を確認できませんでした。列の内部名と更新後の値を確認してください。');
+        if (verified.evaluationPoints === undefined) throw new Error('初期化後もEvaluationPoints列の値を確認できませんでした。列の内部名と更新後の値を確認してください。');
+        return { ids: verified.ids, exists: true, points: verified.points, evaluationPoints: verified.evaluationPoints };
+      }
+      return { ids: item.ids, exists: true, points: item.points, evaluationPoints: item.evaluationPoints ?? 0 };
+    }
+    throw new Error('別の端末で更新が続いているため、ポイントを初期化できませんでした。再読み込みしてください。');
+  }
+
+  public async reconcileEvaluationPoints(evaluationCount: number): Promise<number> {
+    if (!Number.isSafeInteger(evaluationCount) || evaluationCount < 0) {
+      throw new Error('評価件数が不正です。');
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const item = await this._readItem();
+      if (!item || item.points === undefined || item.evaluationPoints === undefined) {
+        throw new Error('ポイント情報が初期化されていません。ページを再読み込みしてください。');
+      }
+      if (evaluationCount < item.evaluationPoints) {
+        throw new Error('評価件数と付与済みポイントの記録が一致しません。管理者に確認してください。');
+      }
+      const additionalPoints = evaluationCount - item.evaluationPoints;
+      if (additionalPoints === 0) return item.points;
+      const response = await this._client.post(`${this._listUrl}/items(${item.id})`, SPHttpClient.configurations.v1, {
+        headers: {
+          Accept: 'application/json;odata=minimalmetadata',
+          'Content-Type': 'application/json;odata=nometadata',
+          'IF-MATCH': item.etag,
+          'X-HTTP-Method': 'MERGE'
+        },
+        body: JSON.stringify({
+          [this._pointsField]: item.points + additionalPoints,
+          [this._evaluationPointsField]: evaluationCount
+        })
+      });
+      if (response.status === 412) continue;
+      await this._check(response, '評価ポイントの反映');
+      const verified = await this._readItem();
+      if (!verified || verified.points === undefined || verified.evaluationPoints !== evaluationCount) {
+        throw new Error('評価ポイントの反映結果を確認できませんでした。再読み込みしてください。');
+      }
+      return verified.points;
+    }
+    throw new Error('別の端末でポイント更新が続いているため、反映できませんでした。再試行してください。');
   }
 
   public async save(base: readonly string[], desired: readonly string[]): Promise<string[]> {
@@ -132,7 +238,9 @@ export default class FavoritesService {
       const body = JSON.stringify({
         Title: this._user.name,
         [this._keyField]: this._user.login,
-        [this._jsonField]: JSON.stringify({ version: 1, scenarioIds: ids })
+        [this._jsonField]: JSON.stringify({ version: 1, scenarioIds: ids }),
+        [this._pointsField]: item ? (item.points ?? 0) : 0,
+        [this._evaluationPointsField]: item ? (item.evaluationPoints ?? 0) : 0
       });
       const response = await this._client.post(
         item ? `${this._listUrl}/items(${item.id})` : `${this._listUrl}/items`,
